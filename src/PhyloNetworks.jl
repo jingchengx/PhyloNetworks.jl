@@ -24,6 +24,9 @@ module PhyloNetworks
     using StatsBase # sample, coef etc.
     using StatsFuns # logsumexp, logaddexp, various cdf
     using StatsModels # re-exported by GLM. for ModelFrame ModelMatrix Formula etc
+    using Libdl
+    using BinaryProvider        # for fastme binary
+    using DelimitedFiles        # for writing PHYLIP format matrices
 
     import Base: show
     import GLM: ftest
@@ -147,7 +150,9 @@ module PhyloNetworks
         stationary,
         empiricalDNAfrequencies,
         # neighbor joining
-        nj
+        nj,
+        # fastME
+        fastME
 
     include("types.jl")
     include("auxiliary.jl")
@@ -174,5 +179,19 @@ module PhyloNetworks
     include("traitsLikDiscrete.jl")
     include("deprecated.jl")
     include("nj.jl")
+    include("fastMEWrapper.jl")
+
+# Load in `deps.jl`, complaining if it does not exist
+const depsjl_path = joinpath(@__DIR__, "..", "deps", "deps.jl")
+if !isfile(depsjl_path)
+    error("PhyloNetworks not installed properly, run Pkg.build(\"PhyloNetworks\"), restart Julia and try again")
+end
+include(depsjl_path)
+
+# Module initialization function
+function __init__()
+    # Always check your dependencies from `deps.jl`
+    check_deps()
+end
 
 end #module

@@ -9,12 +9,13 @@ function writeDistanceMatrix!(s::IO, D::Matrix{<:Real}, names::AbstractVector{St
     end
 end
 
-function fastme(D::Matrix{<:Real}, names::AbstractVector{String})
+function fastME(D::Matrix{<:Real}, names::AbstractVector{String})
+    global fastme
     (path, io) = mktemp()
     tpath = tempname()
     writeDistanceMatrix!(io, D, names)
     close(io)
-    fastmecmd = `fastme -m OLSME -n -i $path -o $tpath`
+    fastmecmd = `$fastme -m OLSME -n -i $path -o $tpath`
     run(fastmecmd)
     tree = readTopology(tpath)
 end
