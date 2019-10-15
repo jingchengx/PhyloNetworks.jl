@@ -162,3 +162,45 @@ See [`nj!`](@ref) for using a matrix as input.
 function nj(D::DataFrame; force_nonnegative_edges::Bool=false)
     nj!(convert(Matrix{Float64}, D), string.(names(D)); force_nonnegative_edges=force_nonnegative_edges)
 end
+
+
+function writedistancematrix!(s::IO, D::Matrix{<:Real}, names::AbstractVector{String})
+    check_distance_matrix(D)
+    write(s, string(size(D, 1)), "\n")
+    for (i, col) in enumerate(eachcol(D))
+        write(s, names[i], "\t")
+        writedlm(s, transpose(col))
+    end
+end
+
+@doc """
+
+    fastME(D::Matrix{<:Real}, names::AbstractVector{String})
+    fastME(D::DataFrame)
+
+Construct a tree from a distance matrix by the FastME algorithm
+([Desper & Gascuel 2002](https://doi.org/10.1089/106652702761034136)).
+The argument `D` is the distance matrix, and `names` is a vector of
+strings of the corresponding taxon names.
+
+When `D` is a `DataFrame`, the taxon names taken from the header of
+the data frame.
+
+The function [`fastME`](@ref) is a wrapper over the [C
+implementation](https://gite.lirmm.fr/atgc/FastME/) by Lefort and
+Gascuel.  The version being used is at commit `f21e6ab7`.
+
+"""
+function fastME(D::Matrix{<:Real}, names::AbstractVector{String})
+    global fastme
+    (path, io) = mktemp()
+    tpath = tempname()
+    writedistancematrix!(io, D, names)
+    close(io)
+    fastmecmd = `$fastme -m OLSME -n -i $path -o $tpath`
+    run(fastmecmd)
+    tree = readTopology(tpath)
+end
+
+@doc (@doc fastME)
+fastME(D::DataFrame) = fastME(convert(Matrix{Float64}, D), string.(names(D)))
