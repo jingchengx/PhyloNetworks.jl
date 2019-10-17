@@ -193,6 +193,12 @@ Gascuel.  The version being used is at commit `f21e6ab7`.
 """
 function fastME(D::Matrix{<:Real}, names::AbstractVector{String})
     global fastme
+
+    # if no binary is installed
+    if !isfile(fastme)
+        error("$(fastme) does not exist.")
+    end
+
     (path, io) = mktemp()
     tpath = tempname()
     writedistancematrix!(io, D, names)

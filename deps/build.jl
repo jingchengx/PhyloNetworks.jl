@@ -30,16 +30,17 @@ download_info = Dict(
 # Install unsatisfied or updated dependencies:
 unsatisfied = any(!satisfied(p; verbose=verbose) for p in products)
 dl_info = choose_download(download_info, platform_key_abi())
+supported = true
 if dl_info === nothing && unsatisfied
-    # If we don't have a compatible .tar.gz to download, complain.
-    # Alternatively, you could attempt to install from a separate provider,
-    # build from source or something even more ambitious here.
-    error("Your platform (\"$(Sys.MACHINE)\", parsed as \"$(triplet(platform_key_abi()))\") is not supported by this package!")
+    # If no compatible .tar.gz to download, we'll carry on as usual,
+    # but warn user that fastME function will be broken.
+    @warn "There is no compiled binary of fastME for your platform (\"$(Sys.MACHINE)\", parsed as \"$(triplet(platform_key_abi()))\").  You can compile fastME and install it to $(prefix), otherwise the function fastME will not work"
+    supported = false
 end
 
 # If we have a download, and we are unsatisfied (or the version we're
 # trying to install is not itself installed) then load it up!
-if unsatisfied || !isinstalled(dl_info...; prefix=prefix)
+if supported && (unsatisfied || !isinstalled(dl_info...; prefix=prefix))
     # Download and install binaries
     install(dl_info...; prefix=prefix, force=true, verbose=verbose)
 end

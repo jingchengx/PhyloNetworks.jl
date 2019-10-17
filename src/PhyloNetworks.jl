@@ -190,7 +190,16 @@ include(depsjl_path)
 # Module initialization function
 function __init__()
     # Always check your dependencies from `deps.jl`
-    check_deps()
+    try
+        check_deps()
+    catch e
+        # anything that went wrong has to be fastME related
+        if isa(e, ErrorException)
+            @warn "fastME binary is not installed (or installed properly), fastME function will not work."
+        else
+            rethrow(e)
+        end
+    end
 end
 
 end #module
