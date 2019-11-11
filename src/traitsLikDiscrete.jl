@@ -475,6 +475,15 @@ function fit!(obj::SSM; optimizeQ=true::Bool, optimizeRVAS=true::Bool,verbose=fa
     return obj
 end
 
+# initialize/update logtrans
+function update_logtrans(obj::SSM)
+    startingP = P(obj.model, 1.0) #sets t = 1 for starting P for efficency
+    for edge in obj.net.edge # update logtrans: same for all displayed trees, all traits
+        for i = 1:length(obj.ratemodel.ratemultiplier)
+            obj.logtrans[:,:,edge.number, i] = log.(P!(startingP, obj.model, edge.length*obj.ratemodel.ratemultiplier[i])) # element-wise
+        end
+    end
+end
 
 """
     discrete_corelikelihood!(obj::StatisticalSubstitutionModel; whichtrait=:all)
@@ -496,12 +505,7 @@ function discrete_corelikelihood!(obj::SSM; whichtrait=:all::Union{Symbol,Intege
     else
         error("'whichtrait' should be :all or :active or an integer in the correct range")
     end
-    startingP = P(obj.model, 1.0) #sets t = 1 for starting P for efficency
-    for edge in obj.net.edge # update logtrans: same for all displayed trees, all traits
-        for i = 1:length(obj.ratemodel.ratemultiplier)
-            obj.logtrans[:,:,edge.number, i] = log.(P!(startingP, obj.model, edge.length*obj.ratemodel.ratemultiplier[i])) # element-wise
-        end
-    end
+    update_logtrans(obj)
     for t in 1:length(obj.displayedtree) # calculate P{data | tree t} & store in obj.postltw[t]
         discrete_corelikelihood_tree!(obj, t, traitrange)
     end
@@ -517,61 +521,19 @@ end
 
 @doc (@doc discrete_corelikelihood!) discrete_corelikelihood_tree!
 function discrete_corelikelihood_tree!(obj::SSM, t::Integer, traitrange::AbstractArray)
-    tree = obj.displayedtree[t]
-    # @info "tree: $(writeTopology(tree))"
     forwardlik = view(obj.forwardlik, :,:,t)
     directlik  = view(obj.directlik,  :,:,t)
-    k = nstates(obj.model)   # also = size(logtrans,1) if not RateVariationAcrossSites
     nr = length(obj.ratemodel.ratemultiplier)
     fullloglik = 0.0         # full: for all characters
     for ci in traitrange     # ci = character index
         currentloglik = 0.0  # current character
         for iratemultiplier in 1:nr
-            fill!(forwardlik, 0.0) # re-initialize for each trait, each iteration
-            fill!(directlik,  0.0)
-            for ni in reverse(1:length(tree.nodes_changed)) # post-order
-                n = tree.nodes_changed[ni]
-                nnum = n.number # same n.number across trees for a given node
-                if n.leaf # need forwardlik initialized at 0: keep at 0 = log(1) if no data
-                    state = obj.trait[nnum][ci] # here: data assumed in a row n.number
-                    if !ismissing(state)
-                        for i in 1:k
-                        forwardlik[i,nnum] = -Inf64 # log(0) = -Inf if i != observed state
-                        end
-                        forwardlik[state, nnum] = 0.
-                    end
-                else # forward likelihood = product of direct likelihood over all children edges
-                    for e in n.edge
-                        n == getParent(e) || continue # to next edge if n is not parent of e
-                        forwardlik[:,nnum] .+= view(directlik, :,e.number)
-                    end
-                end
-                if ni==1 # root is first index in nodes changed
-                    if typeof(obj.model) == NASM 
-                        logprior = log.(stationary(obj.model))
-                    else #other trait models
-                        logprior = [-log(k) for i in 1:k] # uniform prior at root
-                    end
-                    loglik = logsumexp(logprior + view(forwardlik, :,nnum)) # log P{data for ci | tree t}
-                    if iratemultiplier == 1
-                        currentloglik = loglik
-                    else # next rate multiplier:
-                        currentloglik = logaddexp(currentloglik, loglik) 
-                    end
-                    break # out of loop over nodes
-                end
-                # if we keep going, n is not the root
-                # calculate direct likelihood on the parent edge of n
-                for e in n.edge
-                    if n == getChild(e)
-                        lt = view(obj.logtrans, :,:,e.number, iratemultiplier)
-                        for i in 1:k # state at parent node
-                            directlik[i,e.number] = logsumexp(view(lt,i,:) + view(forwardlik,:,nnum))
-                        end
-                        break # we visited the parent edge: break out of for loop
-                    end
-                end #loop over edges
-            end # of loop over nodes
+            loglik = discrete_corelikelihood_trait!(obj, t, ci, iratemultiplier)[1]
+            if iratemultiplier == 1
+                currentloglik = loglik
+            else # next rate multiplier:
+                currentloglik = logaddexp(currentloglik, loglik) 
+            end
         end # of loop over rate multipliers
         if !ismissing(obj.siteweight) #if dna data with dna site pattern weights, multiplied here
             currentloglik *= obj.siteweight[ci]
@@ -581,6 +543,58 @@ function discrete_corelikelihood_tree!(obj::SSM, t::Integer, traitrange::Abstrac
     end #of loop over traits
     obj.postltw[t] = fullloglik - log(nr)*length(traitrange) #logL divided by (#of rates)(# of chars)
     return fullloglik - log(nr)*length(traitrange)
+end
+
+# return the forwardlik and directlik for tree `t`, trait index `ci` and rate index `ri`
+# returns forwardlik and directlik, indexed as lik[state, nnode or nedge]
+# modify the forwardlik and directlik provided if necessary
+function discrete_corelikelihood_trait!(obj::SSM, t::Integer, ci::Integer, ri::Integer,
+                                        forwardlik::AbstractArray{Float64, 2} = view(obj.forwardlik, :,:,t),
+                                        directlik::AbstractArray{Float64, 2} = view(obj.directlik,  :,:,t))
+    tree = obj.displayedtree[t]
+    k = nstates(obj.model)   # also = size(logtrans,1) if not RateVariationAcrossSites
+    fill!(forwardlik, 0.0) # re-initialize for each trait, each iteration
+    fill!(directlik,  0.0)
+    loglik = 0.
+    for ni in reverse(1:length(tree.nodes_changed)) # post-order
+        n = tree.nodes_changed[ni]
+        nnum = n.number # same n.number across trees for a given node
+        if n.leaf # need forwardlik initialized at 0: keep at 0 = log(1) if no data
+            state = obj.trait[nnum][ci] # here: data assumed in a row n.number
+            if !ismissing(state)
+                for i in 1:k
+                    forwardlik[i,nnum] = -Inf64 # log(0) = -Inf if i != observed state
+                end
+                forwardlik[state, nnum] = 0.
+            end
+        else # forward likelihood = product of direct likelihood over all children edges
+            for e in n.edge
+                n == getParent(e) || continue # to next edge if n is not parent of e
+                forwardlik[:,nnum] .+= view(directlik, :,e.number)
+            end
+        end
+        if ni==1 # root is first index in nodes changed
+            if typeof(obj.model) == NASM 
+                logprior = log.(stationary(obj.model))
+            else #other trait models
+                logprior = [-log(k) for i in 1:k] # uniform prior at root
+            end
+            loglik = logsumexp(logprior + view(forwardlik, :,nnum)) # log P{data for ci | tree t}
+            break # out of loop over nodes
+        end
+        # if we keep going, n is not the root
+        # calculate direct likelihood on the parent edge of n
+        for e in n.edge
+            if n == getChild(e)
+                lt = view(obj.logtrans, :,:,e.number, ri)
+                for i in 1:k # state at parent node
+                    directlik[i,e.number] = logsumexp(view(lt,i,:) + view(forwardlik,:,nnum))
+                end
+                break # we visited the parent edge: break out of for loop
+            end
+        end #loop over edges
+    end # of loop over nodes
+    return (loglik, forwardlik, directlik)
 end
 
 """
@@ -797,12 +811,13 @@ function ancestralStateReconstruction(obj::SSM, trait::Integer)
 end
 
 """
-    discrete_backwardlikelihood_tree!(obj::SSM, tree::Integer, trait::Integer)
+    discrete_backwardlikelihood_tree!(obj::SSM, tree::Integer, trait::Integer, ri::Integer)
 
 Update `obj.backwardlik`; assume correct forward likelihood, directional likelihood
 and transition probabilities.
+`ri` is the index for the rate multiplier.
 """
-function discrete_backwardlikelihood_tree!(obj::SSM, t::Integer, trait::Integer)
+function discrete_backwardlikelihood_tree!(obj::SSM, t::Integer, trait::Integer, ri::Integer = 1)
     tree = obj.displayedtree[t]
     frdlik = view(obj.forwardlik, :,:,t)
     dirlik = view(obj.directlik , :,:,t)
@@ -828,13 +843,13 @@ function discrete_backwardlikelihood_tree!(obj::SSM, t::Integer, trait::Integer)
                     bkwtmp .+= view(dirlik, :,se.number)
                 end
             end
-            lt = view(obj.logtrans, :,:,pe.number)
+            lt = view(obj.logtrans, :,:,pe.number,ri)
             for j in 1:k # state at node n
                 bkdlik[j,nnum] = logsumexp(bkwtmp + view(lt,:,j))
             end
         end
     end
-    return nothing
+    return bkdlik
 end
 
 # fixit: new type for two (dependent) binary traits
