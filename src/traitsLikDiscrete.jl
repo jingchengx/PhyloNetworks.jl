@@ -520,6 +520,8 @@ function discrete_corelikelihood!(obj::SSM; whichtrait=:all::Union{Symbol,Intege
 end
 
 @doc (@doc discrete_corelikelihood!) discrete_corelikelihood_tree!
+# for a specific tree, aggregate likelihoods over different traits and rates
+# PRECONDITIONS: logtrans updated, edges directed, nodes/edges preordered
 function discrete_corelikelihood_tree!(obj::SSM, t::Integer, traitrange::AbstractArray)
     forwardlik = view(obj.forwardlik, :,:,t)
     directlik  = view(obj.directlik,  :,:,t)
@@ -548,6 +550,7 @@ end
 # return the forwardlik and directlik for tree `t`, trait index `ci` and rate index `ri`
 # returns forwardlik and directlik, indexed as lik[state, nnode or nedge]
 # modify the forwardlik and directlik provided if necessary
+# PRECONDITIONS: see `discrete_corelikelihood_tree!`
 function discrete_corelikelihood_trait!(obj::SSM, t::Integer, ci::Integer, ri::Integer,
                                         forwardlik::AbstractArray{Float64, 2} = view(obj.forwardlik, :,:,t),
                                         directlik::AbstractArray{Float64, 2} = view(obj.directlik,  :,:,t))
@@ -817,11 +820,17 @@ Update `obj.backwardlik`; assume correct forward likelihood, directional likelih
 and transition probabilities.
 `ri` is the index for the rate multiplier.
 """
-function discrete_backwardlikelihood_tree!(obj::SSM, t::Integer, trait::Integer, ri::Integer = 1)
+# modifies the last provided argument to contain backwardliks
+# FIXME: should be named discrete_backwardlikelihood_trait!
+function discrete_backwardlikelihood_tree!(obj::SSM, t::Integer,
+                                           trait::Integer,
+                                           ri::Integer = 1,
+                                           backwardlik =
+                                           view(obj.backwardlik,:,:,t))
     tree = obj.displayedtree[t]
     frdlik = view(obj.forwardlik, :,:,t)
     dirlik = view(obj.directlik , :,:,t)
-    bkdlik = view(obj.backwardlik,:,:,t)
+    bkdlik = backwardlik
     k = nstates(obj.model)
     bkwtmp = Vector{Float64}(undef, k) # to hold bkw lik without parent edge transition
     if typeof(obj.model) == NASM 
