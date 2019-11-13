@@ -551,13 +551,14 @@ end
 # returns forwardlik and directlik, indexed as lik[state, nnode or nedge]
 # modify the forwardlik and directlik provided if necessary
 # PRECONDITIONS: see `discrete_corelikelihood_tree!`
+# when edge is not in the tree, then the directional likelihood is 0 (log is -Inf)
 function discrete_corelikelihood_trait!(obj::SSM, t::Integer, ci::Integer, ri::Integer,
                                         forwardlik::AbstractArray{Float64, 2} = view(obj.forwardlik, :,:,t),
                                         directlik::AbstractArray{Float64, 2} = view(obj.directlik,  :,:,t))
     tree = obj.displayedtree[t]
     k = nstates(obj.model)   # also = size(logtrans,1) if not RateVariationAcrossSites
     fill!(forwardlik, 0.0) # re-initialize for each trait, each iteration
-    fill!(directlik,  0.0)
+    fill!(directlik,  -Inf64)
     loglik = 0.
     for ni in reverse(1:length(tree.nodes_changed)) # post-order
         n = tree.nodes_changed[ni]
