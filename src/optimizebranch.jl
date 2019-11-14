@@ -2,7 +2,7 @@ const SSM = StatisticalSubstitutionModel
 
 # Collect the relevant likelihoods for calculation: in this case,
 # across all sites
-# returns an array such that array[treeidx,rateidx][siteidx] = (gs,f,rateidx)
+# returns an array such that array[treeidx,ri(rateidx)][siteidx] = (f,gs,ri)
 function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
                       ri::Integer) # rate index
     ns = obj.nsites
@@ -18,27 +18,24 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
     liks = Vector{Tuple{Vector{Float64},Vector{Float64},Int}}(undef, ns)
     # forwardlik for node u, across sites
     # avoid repated memory allocation
-    forwardliktemp = Array{Float64}(undef, k, obj.net.numNodes)
-    dirliktemp = Array{Float64}(undef, k, obj.net.numEdges)
-    backwardliktemp = Array{Float64}(undef, k, obj.net.numNodes)
+    ftemp = Array{Float64}(undef, k, obj.net.numNodes)
+    stemp = Array{Float64}(undef, k, obj.net.numEdges)
+    gstemp = Array{Float64}(undef, k, obj.net.numNodes)
 
     for si in 1:ns
         # set up forward/directional likelihoood
-        discrete_corelikelihood_trait!(obj, t, si, ri,
-                                       forwardliktemp, dirliktemp)
+        discrete_corelikelihood_trait!(obj, t, si, ri, ftemp, stemp)
         # set up backward likelihood
-        discrete_backwardlikelihood_tree!(obj, t, si, ri,
-                                          backwardliktemp)
+        discrete_backwardlikelihood_tree!(obj, t, si, ri, gstemp)
         for e in v.edge
             if e != b && v == getParent(e) # e is sister edg of b
-                @views backwardliktemp[:,v.number] .+= dirliktemp[:, e.number]
+                @views gstemp[:,v.number] .+= stemp[:, e.number]
             end
         end
-        @views liks[si] = (forwardliktemp[ :, u.number],
-                           backwardliktemp[ :, v.number],
-                           ri)
+        @views let f = ftemp[ :, u.number], gs=gstemp[ :, v.number]
+            liks[si] = (f, gs, ri)
+        end
     end
-
     return liks
 end
 
@@ -47,34 +44,36 @@ function optimize_single_branch(obj::SSM, edgenum::Integer)
     # TODO: sanity checks, edgnum valid, etc.
 
     ntrees = length(obj.displayedtree)
-    nrates = length(obj.ratemodel.ratemultiplier)
+    rates = obj.ratemodel.ratemultiplier
+    nrates = length(rates)
     ns = obj.nsites
     k = nstates(obj.model)
+    qmat = Q(obj.model)
     liks = [ collect_liks(obj, edgenum, it, ir)
              for it=1:ntrees, ir=1:nrates ]
 
-    # construct objective function, gradient, Hessian (possibly)
+    # loglikelihood objective function
     function loglik(t::Float64)
         # lp[ri] = transition prob matrix for ri-th rate
         lp = map(rate -> log.(P(obj.model, rate * t)),
                  obj.ratemodel.ratemultiplier)
 
         # map each site to the loglik
-        trslglks = map(slktp ->
-                        map((gs,f,ri)::Tuple -> logsumexp(lp[ri] .+ (gs .+ f')),slktp),
+        # trslglks[tree,rate][site]=loglik for site
+        trslglks = map(sitevectup ->
+                       map((f,gs,ri)::Tuple ->
+                           logsumexp(lp[ri] .+ (gs .+ f')),
+                           sitevectup),
                         liks)
         # add siteweight to each (tree,rate) combination
         ismissing(obj.siteweight) ||
             (slks -> slks .* obj.siteweight).(trslglks)
-        # trslglks[tree,rate][site] = loglik for site
+        # trlglks[tree,rate]=loglik for tree and rate
         trlglks = map(sum, trslglks)
-        # trlglks[tree,rate] = loglik over all sites, for fiex tree and rate
-        tlglks = mapslices(rlglks -> reduce(logaddexp, rlglks, init=-Inf) - log(nrates),
-                           trlglks, dims = [2])
-        dropdims(tlglks, dims = 2)
-        # tlglks[tree] = loglik for tree
-        # aggregate over trees
-        loglik = logsumexp(tlglks .+ obj.priorltw)
+        # multiply in the mixutre probabilities
+        trlglks .+= obj.priorltw
+        trlglks .-= log(nrates)
+        loglik = reduce(logaddexp, trlglks, init=-Inf)
 
         return loglik
     end
