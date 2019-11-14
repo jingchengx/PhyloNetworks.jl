@@ -2,6 +2,7 @@ const SSM = StatisticalSubstitutionModel
 
 # Collect the relevant likelihoods for calculation: in this case,
 # across all sites
+# returns an array such that array[treeidx,rateidx][siteidx] = (gs,f,rateidx)
 function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
                       ri::Integer) # rate index
     ns = obj.nsites
@@ -13,8 +14,8 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
     # present in the tree
     b = tree.edge[edgenum]; v = getParent(b); u = getChild(b);
     # let edge be b := v -> u, and sibling edge be d
-    # log(backlik) + sum(log(dirlik)) for node v and out edges of v, across sites
-    liks = Vector{Tuple{Vector{Float64},Vector{Float64}}}(undef, ns)
+    # log(backlik) + sum(log(dirlik)) for node v and out edges of v across sites
+    liks = Vector{Tuple{Vector{Float64},Vector{Float64},Int}}(undef, ns)
     # forwardlik for node u, across sites
     # avoid repated memory allocation
     forwardliktemp = Array{Float64}(undef, k, obj.net.numNodes)
@@ -33,7 +34,9 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
                 @views backwardliktemp[:,v.number] .+= dirliktemp[:, e.number]
             end
         end
-        @views liks[si] = (forwardliktemp[ :, u.number],backwardliktemp[ :, v.number])
+        @views liks[si] = (forwardliktemp[ :, u.number],
+                           backwardliktemp[ :, v.number],
+                           ri)
     end
 
     return liks
@@ -47,16 +50,18 @@ function optimize_single_branch(obj::SSM, edgenum::Integer)
     nrates = length(obj.ratemodel.ratemultiplier)
     ns = obj.nsites
     k = nstates(obj.model)
-    # liks[tree,rate][site] = (gs,f)
     liks = [ collect_liks(obj, edgenum, it, ir)
              for it=1:ntrees, ir=1:nrates ]
 
     # construct objective function, gradient, Hessian (possibly)
     function loglik(t::Float64)
-        lp = log.(P(obj.model, t))    # logtrans of the edge
+        # lp[ri] = transition prob matrix for ri-th rate
+        lp = map(rate -> log.(P(obj.model, rate * t)),
+                 obj.ratemodel.ratemultiplier)
 
+        # map each site to the loglik
         trslglks = map(slktp ->
-                        map((gs, f)::Tuple -> logsumexp(lp .+ (gs .+ f')),slktp),
+                        map((gs,f,ri)::Tuple -> logsumexp(lp[ri] .+ (gs .+ f')),slktp),
                         liks)
         # add siteweight to each (tree,rate) combination
         ismissing(obj.siteweight) ||
