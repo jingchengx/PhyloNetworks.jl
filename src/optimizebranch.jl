@@ -99,7 +99,7 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         # gradient
         # slikd[tree,rate][site]=deriv of likelihood (NOT loglik)
         # tlld[tree,rate]=deriv of tll[tree,rate] at t
-        slikd = map(stup -> map((gs,f,ri)::Tuple ->
+        slikd = map(stup -> map((f,gs,ri)::Tuple ->
                         exp.(gs)' * pq[ri] * exp.(f),
                         stup), liks)
         tlld = map((sld, sll)::Tuple ->
@@ -108,7 +108,7 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         grad = mix(tlld .* exp.(tll)) / exp(loglik)
 
         # Hessian
-        slikdd = map(stup -> map((gs,f,ri)::Tuple ->
+        slikdd = map(stup -> map((f,gs,ri)::Tuple ->
                                  exp.(gs)' * pqq[ri] * exp.(f),
                                  stup), liks)
         tlldd = map((sldd,sld,sll)::Tuple ->
