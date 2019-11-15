@@ -40,7 +40,8 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
 end
 
 # PRECONDITIONS: logtrans updated, edges directed
-function optimize_single_branch(obj::SSM, edgenum::Integer)
+# return a loglik(t) and derivative at t where t is the branch length
+function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
     # TODO: sanity checks, edgnum valid, etc.
 
     ntrees = length(obj.displayedtree)
@@ -53,9 +54,11 @@ function optimize_single_branch(obj::SSM, edgenum::Integer)
              for it=1:ntrees, ir=1:nrates ]
 
     # loglikelihood objective function
-    function loglik(t::Float64)
+    function objective(t::Float64)
         # lp[ri] = transition prob matrix for ri-th rate
         lp = map(rate -> log.(P(obj.model, rate * t)),
+                 obj.ratemodel.ratemultiplier)
+        pq = map(rate -> rate * qmat * P(obj.model, rate * t),
                  obj.ratemodel.ratemultiplier)
 
         # map each site to the loglik
@@ -75,8 +78,26 @@ function optimize_single_branch(obj::SSM, edgenum::Integer)
         trlglks .-= log(nrates)
         loglik = reduce(logaddexp, trlglks, init=-Inf)
 
-        return loglik
+        # gradient
+        # grads[tree, rate](t) = gradient of trlglks[tree,rate](t)
+        # TODO cache exp.(gs) and exp.(f)
+        grads_site_numerator = map(sitevectup ->
+                                   map((gs,f,ri)::Tuple ->
+                                       exp.(gs)' * pq[ri] * exp.(f),
+                                       sitevectup),
+                                   liks)
+        ismissing(obj.siteweight) ||
+            (slks -> slks .* obj.siteweight).(grads_site_numerator)
+        grads = map((gsnum, siteveclik)::Tuple ->
+                    sum(gsnum ./ exp.(siteveclik)),
+                    zip(grads_site_numerator,trslglks))
+        grads .*= exp.(trlglks)
+        grads .*= exp.(obj.priorltw)
+        grads ./= nrates
+        grad = sum(grads) / exp(loglik)
+
+        return (loglik,grad)
     end
 
-    return loglik
+    return objective
 end
