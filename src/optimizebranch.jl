@@ -60,6 +60,8 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
                  obj.ratemodel.ratemultiplier)
         pq = map(rate -> rate * qmat * P(obj.model, rate * t),
                  obj.ratemodel.ratemultiplier)
+        pqq = map(rate -> rate^2 * qmat^2 * P(obj.model, rate * t),
+                  obj.ratemodel.ratemultiplier)
 
         # taking care of siteweight
         wsum = sum
@@ -88,26 +90,33 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         slls = map(stup -> map((f,gs,ri)::Tuple ->
                            logsumexp(lp[ri] .+ (gs .+ f')),
                            stup), liks)
-        # tll: loglikelihood for a (tree,rate) pair
-        # tlls: array of tll's
-        # tlls[tree,rate]=loglik for tree and rate
-        tlls = map(wsum, slls)
-        loglik = lmix(tlls)
+        # tll: array of loglikelihood for a (tree,rate) pair
+        # tll[tree,rate]=loglik for tree and rate
+        tll = map(wsum, slls)
+        loglik = lmix(tll)
 
         # TODO cache exp.(gs) and exp.(f)
         # gradient
-        # grads[tree, rate](t) = gradient of tlls[tree,rate](t)
         # slikd[tree,rate][site]=deriv of likelihood (NOT loglik)
-        # slld[tree,rate]=deriv of loglik at (tree, rate)
+        # tlld[tree,rate]=deriv of tll[tree,rate] at t
         slikd = map(stup -> map((gs,f,ri)::Tuple ->
                         exp.(gs)' * pq[ri] * exp.(f),
                         stup), liks)
-        slld = map((sld, sll)::Tuple ->
+        tlld = map((sld, sll)::Tuple ->
                     wsum(sld ./ exp.(sll)),
                     zip(slikd,slls))
-        grad = mix(slld .* exp.(tlls)) / exp(loglik)
+        grad = mix(tlld .* exp.(tll)) / exp(loglik)
 
-        return (loglik,grad)
+        # Hessian
+        slikdd = map(stup -> map((gs,f,ri)::Tuple ->
+                                 exp.(gs)' * pqq[ri] * exp.(f),
+                                 stup), liks)
+        tlldd = map((sldd,sld,sll)::Tuple ->
+                    wsum((sldd ./ exp.(sll)) - (sld .^ 2 ./ exp.(2 .* sll))),
+                    zip(slikdd,slikd,slls))
+        hessian = mix((tlldd .+ tlld .^2) .* exp.(tll)) / exp(loglik) - grad^2
+
+        return (loglik,grad,hessian)
     end
 
     return objective
