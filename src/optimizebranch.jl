@@ -61,37 +61,39 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         pq = map(rate -> rate * qmat * P(obj.model, rate * t),
                  obj.ratemodel.ratemultiplier)
 
-        # map each site to the loglik
-        # trslglks[tree,rate][site]=loglik for site
-        trslglks = map(sitevectup ->
-                       map((f,gs,ri)::Tuple ->
+        # taking care of siteweight
+        wsum = sum
+        if !ismissing(obj.siteweight)
+            wsum = (vals -> sum(vals .* obj.siteweight))
+        end
+
+        # sll: array of site loglikelihood (for fixed tree & rate)
+        # slls: array of sll's
+        # i.e. slls[tree,rate][site]=loglik for site
+        # stup: array of (f,gs,ri) tuples
+        slls = map(stup -> map((f,gs,ri)::Tuple ->
                            logsumexp(lp[ri] .+ (gs .+ f')),
-                           sitevectup),
-                        liks)
-        # add siteweight to each (tree,rate) combination
-        ismissing(obj.siteweight) ||
-            (slks -> slks .* obj.siteweight).(trslglks)
-        # trlglks[tree,rate]=loglik for tree and rate
-        trlglks = map(sum, trslglks)
+                           stup), liks)
+        # tll: loglikelihood for a (tree,rate) pair
+        # tlls: array of tll's
+        # tlls[tree,rate]=loglik for tree and rate
+        tlls = map(wsum, slls)
         # multiply in the mixutre probabilities
-        trlglks .+= obj.priorltw
-        trlglks .-= log(nrates)
-        loglik = reduce(logaddexp, trlglks, init=-Inf)
+        tlls .+= obj.priorltw
+        tlls .-= log(nrates)
+        loglik = reduce(logaddexp, tlls, init=-Inf)
 
         # gradient
-        # grads[tree, rate](t) = gradient of trlglks[tree,rate](t)
+        # grads[tree, rate](t) = gradient of tlls[tree,rate](t)
         # TODO cache exp.(gs) and exp.(f)
-        grads_site_numerator = map(sitevectup ->
-                                   map((gs,f,ri)::Tuple ->
-                                       exp.(gs)' * pq[ri] * exp.(f),
-                                       sitevectup),
-                                   liks)
-        ismissing(obj.siteweight) ||
-            (slks -> slks .* obj.siteweight).(grads_site_numerator)
-        grads = map((gsnum, siteveclik)::Tuple ->
-                    sum(gsnum ./ exp.(siteveclik)),
-                    zip(grads_site_numerator,trslglks))
-        grads .*= exp.(trlglks)
+        # slikd[tree,rate][site]=deriv of likelihood (NOT loglik)
+        slikd = map(stup -> map((gs,f,ri)::Tuple ->
+                        exp.(gs)' * pq[ri] * exp.(f),
+                        stup), liks)
+        grads = map((sld, sll)::Tuple ->
+                    wsum(sld ./ exp.(sll)),
+                    zip(slikd,slls))
+        grads .*= exp.(tlls)
         grads .*= exp.(obj.priorltw)
         grads ./= nrates
         grad = sum(grads) / exp(loglik)
