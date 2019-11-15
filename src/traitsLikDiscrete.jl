@@ -558,7 +558,7 @@ function discrete_corelikelihood_trait!(obj::SSM, t::Integer, ci::Integer, ri::I
     tree = obj.displayedtree[t]
     k = nstates(obj.model)   # also = size(logtrans,1) if not RateVariationAcrossSites
     fill!(forwardlik, 0.0) # re-initialize for each trait, each iteration
-    fill!(directlik,  -Inf64)
+    fill!(directlik,  0.0)
     loglik = 0.
     for ni in reverse(1:length(tree.nodes_changed)) # post-order
         n = tree.nodes_changed[ni]
@@ -823,14 +823,15 @@ and transition probabilities.
 """
 # modifies the last provided argument to contain backwardliks
 # FIXME: should be named discrete_backwardlikelihood_trait!
+# backwardlik is modified and returned
 function discrete_backwardlikelihood_tree!(obj::SSM, t::Integer,
                                            trait::Integer,
                                            ri::Integer = 1,
                                            backwardlik =
-                                           view(obj.backwardlik,:,:,t))
+                                           view(obj.backwardlik,:,:,t),
+                                           dirlik = view(obj.directlik , :,:,t))
     tree = obj.displayedtree[t]
     frdlik = view(obj.forwardlik, :,:,t)
-    dirlik = view(obj.directlik , :,:,t)
     bkdlik = backwardlik
     k = nstates(obj.model)
     bkwtmp = Vector{Float64}(undef, k) # to hold bkw lik without parent edge transition

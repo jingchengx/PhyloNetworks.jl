@@ -26,7 +26,7 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
         # set up forward/directional likelihoood
         discrete_corelikelihood_trait!(obj, t, si, ri, ftemp, stemp)
         # set up backward likelihood
-        discrete_backwardlikelihood_tree!(obj, t, si, ri, gstemp)
+        discrete_backwardlikelihood_tree!(obj, t, si, ri, gstemp, stemp)
         for e in v.edge
             if e != b && v == getParent(e) # e is sister edg of b
                 @views gstemp[:,v.number] .+= stemp[:, e.number]
