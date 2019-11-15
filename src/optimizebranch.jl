@@ -67,6 +67,20 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
             wsum = (vals -> sum(vals .* obj.siteweight))
         end
 
+        # aggregate a [tree,rate] array with the prior prob
+        function mix(ls::Array{Float64, 2})
+            ls .*= exp.(obj.priorltw)
+            ls ./= nrates
+            sum(ls)
+        end
+
+        # same as mix, but on log scale
+        function lmix(lls::Array{Float64, 2})
+            lls .+= obj.priorltw
+            lls .-= log(nrates)
+            reduce(logaddexp, lls, init=-Inf)
+        end
+
         # sll: array of site loglikelihood (for fixed tree & rate)
         # slls: array of sll's
         # i.e. slls[tree,rate][site]=loglik for site
@@ -78,25 +92,20 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         # tlls: array of tll's
         # tlls[tree,rate]=loglik for tree and rate
         tlls = map(wsum, slls)
-        # multiply in the mixutre probabilities
-        tlls .+= obj.priorltw
-        tlls .-= log(nrates)
-        loglik = reduce(logaddexp, tlls, init=-Inf)
+        loglik = lmix(tlls)
 
+        # TODO cache exp.(gs) and exp.(f)
         # gradient
         # grads[tree, rate](t) = gradient of tlls[tree,rate](t)
-        # TODO cache exp.(gs) and exp.(f)
         # slikd[tree,rate][site]=deriv of likelihood (NOT loglik)
+        # slld[tree,rate]=deriv of loglik at (tree, rate)
         slikd = map(stup -> map((gs,f,ri)::Tuple ->
                         exp.(gs)' * pq[ri] * exp.(f),
                         stup), liks)
-        grads = map((sld, sll)::Tuple ->
+        slld = map((sld, sll)::Tuple ->
                     wsum(sld ./ exp.(sll)),
                     zip(slikd,slls))
-        grads .*= exp.(tlls)
-        grads .*= exp.(obj.priorltw)
-        grads ./= nrates
-        grad = sum(grads) / exp(loglik)
+        grad = mix(slld .* exp.(tlls)) / exp(loglik)
 
         return (loglik,grad)
     end
