@@ -147,7 +147,8 @@ module PhyloNetworks
         stationary,
         empiricalDNAfrequencies,
         # neighbor joining
-        nj
+        nj,
+        optimize_branch
 
     include("types.jl")
     include("auxiliary.jl")
@@ -174,5 +175,6 @@ module PhyloNetworks
     include("traitsLikDiscrete.jl")
     include("deprecated.jl")
     include("nj.jl")
+    include("optimizebranch.jl")
 
 end #module

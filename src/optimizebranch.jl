@@ -145,3 +145,19 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
 
     return objective
 end
+
+function optimize_branch(obj::SSM, edgenum::Int)
+    fun = single_branch_loglik_objective(obj, edgenum)
+    function wrapper(t::Vector, grad::Vector)
+        (l,g,h) = fun(t[1])
+        length(grad) > 0 && (grad[1] = g)
+        return l
+    end
+    len = getEdge(edgenum, obj.net).length
+    opt = Opt(:LD_LBFGS, 1)
+    opt.max_objective = wrapper
+    opt.lower_bounds = 0
+    return optimize(opt, [len])
+end
+
+
