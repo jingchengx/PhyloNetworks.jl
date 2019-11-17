@@ -18,14 +18,6 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
     result = Tuple{Int,
         Union{Vector{Tuple{Vector{Float64}, Vector{Float64}}},Nothing},
         Union{Vector{Float64},Nothing}}
-    # avoid repated memory allocation
-    liks = Vector{Tuple{Vector{Float64}, Vector{Float64}}}(undef, ns)
-    # forwardlik for node u, across sites
-    ftemp = Array{Float64}(undef, k, obj.net.numNodes)
-    # dirlik
-    stemp = Array{Float64}(undef, k, obj.net.numEdges)
-    # log(backlik) + sum(log(dirlik)) for node v and out edges of v across sites
-    gstemp = Array{Float64}(undef, k, obj.net.numNodes)
 
     # TODO optimize this part: check if edge in tree?
     ind = findfirst(x -> x.number == edgenum, tree.edge)
@@ -41,19 +33,21 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
     preorder!(tree)
     b = tree.edge[ind]; v = getParent(b); u = getChild(b);
 
+    liks = Vector{Tuple{Vector{Float64}, Vector{Float64}}}(undef, ns)
     for si in 1:ns
-        # set up forward/directional likelihoood
-        discrete_corelikelihood_trait!(obj, t, si, ri, ftemp, stemp)
-        # set up backward likelihood
-        discrete_backwardlikelihood_tree!(obj, t, si, ri, gstemp, stemp)
+        fwdlik = Array{Float64}(undef, k, obj.net.numNodes)
+        dirlik = Array{Float64}(undef, k, obj.net.numEdges)
+        bkwlik = Array{Float64}(undef, k, obj.net.numNodes)
+        discrete_corelikelihood_trait!(obj, t, si, ri, fwdlik, dirlik)
+        discrete_backwardlikelihood_tree!(obj, t, si, ri, fwdlik, dirlik, bkwlik)
+        f = fwdlik[ :, u.number]
+        gs = bkwlik[ :, v.number]
         for e in v.edge
             if e != b && v == getParent(e) # e is sister edg of b
-                @views gstemp[:,v.number] .+= stemp[:, e.number]
+                gs .+= dirlik[:, e.number]
             end
         end
-        @views let f = ftemp[ :, u.number], gs=gstemp[ :, v.number]
-            liks[si] = (f, gs)
-        end
+        liks[si] = (f, gs)
     end
     return (ri,liks,nothing)
 end

@@ -826,12 +826,10 @@ and transition probabilities.
 function discrete_backwardlikelihood_tree!(obj::SSM, t::Integer,
                                            trait::Integer,
                                            ri::Integer = 1,
-                                           backwardlik =
-                                           view(obj.backwardlik,:,:,t),
-                                           dirlik = view(obj.directlik , :,:,t))
+                                           forwardlik = view(obj.forwardlik, :,:,t),
+                                           directlik = view(obj.directlik , :,:,t),
+                                           backwardlik = view(obj.backwardlik,:,:,t))
     tree = obj.displayedtree[t]
-    frdlik = view(obj.forwardlik, :,:,t)
-    bkdlik = backwardlik
     k = nstates(obj.model)
     bkwtmp = Vector{Float64}(undef, k) # to hold bkw lik without parent edge transition
     if typeof(obj.model) == NASM 
@@ -843,23 +841,23 @@ function discrete_backwardlikelihood_tree!(obj::SSM, t::Integer,
         n = tree.nodes_changed[ni]
         nnum = n.number
         if ni == 1 # n is the root
-            bkdlik[:,nnum] = logprior
+            backwardlik[:,nnum] = logprior
         else
             pe = getMajorParentEdge(n)
             pn = getParent(pe)
-            bkwtmp[:] = bkdlik[:,pn.number] # use bktmp's original memory
+            bkwtmp[:] = backwardlik[:,pn.number] # use bktmp's original memory
             for se in pn.edge
                 if se != pe && pn == getParent(se) # then se is sister edge to pe
-                    bkwtmp .+= view(dirlik, :,se.number)
+                    bkwtmp .+= view(directlik, :,se.number)
                 end
             end
             lt = view(obj.logtrans, :,:,pe.number,ri)
             for j in 1:k # state at node n
-                bkdlik[j,nnum] = logsumexp(bkwtmp + view(lt,:,j))
+                backwardlik[j,nnum] = logsumexp(bkwtmp + view(lt,:,j))
             end
         end
     end
-    return bkdlik
+    return backwardlik
 end
 
 # fixit: new type for two (dependent) binary traits
