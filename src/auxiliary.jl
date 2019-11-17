@@ -284,6 +284,12 @@ function getIndexEdge(number::Integer,net::Network)
     return ind
 end
 
+getEdge(number::Integer, net::Network) =
+    net.edge[getIndexEdge(number, net)]
+
+isEdgeNumIn(number::Integer, net::Network) =
+    any(map(e -> e.number == number, net.edge))
+
 # find the index of an edge in node.edge
 function getIndexEdge(edge::Edge,node::Node)
     findfirst(e -> isequal(edge,e), node.edge)

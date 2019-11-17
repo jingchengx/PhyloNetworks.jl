@@ -2,25 +2,44 @@ const SSM = StatisticalSubstitutionModel
 
 # Collect the relevant likelihoods for calculation: in this case,
 # across all sites
-# returns an array such that array[treeidx,ri(rateidx)][siteidx] = (f,gs,ri)
+# returns an tuple (ri, arr, lik)
+# when edgenum is in tree, then lik = nothing, and arr[site] = (f,gs)
+# where f is the forwardlik at site (of size k), gs is the product of
+# backwardlik and directlik
+# when edgenum is not in the tree, then ri = 0, arr = nothing, lik is the per
+# site likelihoods
 function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
                       ri::Integer) # rate index
     ns = obj.nsites
     k = nstates(obj.model)
     tree = obj.displayedtree[t]
-    preorder!(tree)
+
+    # let edge be b := v -> u, and sibling edge be d
+    result = Tuple{Int,
+        Union{Vector{Tuple{Vector{Float64}, Vector{Float64}}},Nothing},
+        Union{Vector{Float64},Nothing}}
+    # avoid repated memory allocation
+    liks = Vector{Tuple{Vector{Float64}, Vector{Float64}}}(undef, ns)
+    # forwardlik for node u, across sites
+    ftemp = Array{Float64}(undef, k, obj.net.numNodes)
+    # dirlik
+    stemp = Array{Float64}(undef, k, obj.net.numEdges)
+    # log(backlik) + sum(log(dirlik)) for node v and out edges of v across sites
+    gstemp = Array{Float64}(undef, k, obj.net.numNodes)
+
+    # TODO optimize this part: check if edge in tree?
+    ind = findfirst(x -> x.number == edgenum, tree.edge)
+    if isnothing(ind)
+        siteliks = map(si -> discrete_corelikelihood_trait!(obj,t,si,ri)[1],
+                       1:ns)
+        return (0,nothing,siteliks)
+    end
+
     # important that nodes and edges from the tree, not the
     # network: in the network we may have sister edges that are not
     # present in the tree
-    b = tree.edge[edgenum]; v = getParent(b); u = getChild(b);
-    # let edge be b := v -> u, and sibling edge be d
-    # log(backlik) + sum(log(dirlik)) for node v and out edges of v across sites
-    liks = Vector{Tuple{Vector{Float64},Vector{Float64},Int}}(undef, ns)
-    # forwardlik for node u, across sites
-    # avoid repated memory allocation
-    ftemp = Array{Float64}(undef, k, obj.net.numNodes)
-    stemp = Array{Float64}(undef, k, obj.net.numEdges)
-    gstemp = Array{Float64}(undef, k, obj.net.numNodes)
+    preorder!(tree)
+    b = tree.edge[ind]; v = getParent(b); u = getChild(b);
 
     for si in 1:ns
         # set up forward/directional likelihoood
@@ -33,10 +52,10 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
             end
         end
         @views let f = ftemp[ :, u.number], gs=gstemp[ :, v.number]
-            liks[si] = (f, gs, ri)
+            liks[si] = (f, gs)
         end
     end
-    return liks
+    return (ri,liks,nothing)
 end
 
 # PRECONDITIONS: logtrans updated, edges directed
@@ -44,16 +63,19 @@ end
 function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
     # TODO: sanity checks, edgnum valid, etc.
 
+    # DEBUG: update logtrans and direct trees in this function, to be
+    # removed in final version
+    directEdges!(obj.net)
+    update_logtrans(obj)
+
     ntrees = length(obj.displayedtree)
     rates = obj.ratemodel.ratemultiplier
     nrates = length(rates)
-    ns = obj.nsites
-    k = nstates(obj.model)
     qmat = Q(obj.model)
+
     liks = [ collect_liks(obj, edgenum, it, ir)
              for it=1:ntrees, ir=1:nrates ]
 
-    # loglikelihood objective function
     function objective(t::Float64)
         # lp[ri] = transition prob matrix for ri-th rate
         lp = map(rate -> log.(P(obj.model, rate * t)),
@@ -80,16 +102,18 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         function lmix(lls::Array{Float64, 2})
             lls .+= obj.priorltw
             lls .-= log(nrates)
-            reduce(logaddexp, lls, init=-Inf)
+            logsumexp(lls)
         end
 
         # sll: array of site loglikelihood (for fixed tree & rate)
         # slls: array of sll's
         # i.e. slls[tree,rate][site]=loglik for site
         # stup: array of (f,gs,ri) tuples
-        slls = map(stup -> map((f,gs,ri)::Tuple ->
-                           logsumexp(lp[ri] .+ (gs .+ f')),
-                           stup), liks)
+        slls = map((ri,stup,lik)::Tuple ->
+                   ri == 0 ? lik :
+                   map((f,gs)::Tuple ->
+                       logsumexp(lp[ri] .+ (gs .+ f')),
+                       stup), liks)
         # tll: array of loglikelihood for a (tree,rate) pair
         # tll[tree,rate]=loglik for tree and rate
         tll = map(wsum, slls)
@@ -99,7 +123,9 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         # gradient
         # slikd[tree,rate][site]=deriv of likelihood (NOT loglik)
         # tlld[tree,rate]=deriv of tll[tree,rate] at t
-        slikd = map(stup -> map((f,gs,ri)::Tuple ->
+        slikd = map((ri,stup,lik)::Tuple ->
+                    ri == 0 ? zeros(length(lik)) :
+                    map((f,gs)::Tuple ->
                         exp.(gs)' * pq[ri] * exp.(f),
                         stup), liks)
         tlld = map((sld, sll)::Tuple ->
@@ -108,9 +134,11 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         grad = mix(tlld .* exp.(tll)) / exp(loglik)
 
         # Hessian
-        slikdd = map(stup -> map((f,gs,ri)::Tuple ->
-                                 exp.(gs)' * pqq[ri] * exp.(f),
-                                 stup), liks)
+        slikdd = map((ri,stup,lik)::Tuple ->
+                     ri == 0 ? zeros(length(lik)) :
+                     map((f,gs)::Tuple ->
+                         exp.(gs)' * pqq[ri] * exp.(f),
+                         stup), liks)
         tlldd = map((sldd,sld,sll)::Tuple ->
                     wsum((sldd ./ exp.(sll)) - (sld .^ 2 ./ exp.(2 .* sll))),
                     zip(slikdd,slikd,slls))
