@@ -127,7 +127,7 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         tlld = map((sld, sll)::Tuple ->
                     wsum(sld ./ exp.(sll)),
                     zip(slikd,slls))
-        grad = mix(tlld .* exp.(tll)) / exp(loglik)
+        grad = mix(tlld .* exp.(tll .- loglik))
 
         # Hessian
         slikdd = map((ri,stup,lik)::Tuple ->
@@ -138,7 +138,7 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         tlldd = map((sldd,sld,sll)::Tuple ->
                     wsum((sldd ./ exp.(sll)) - (sld .^ 2 ./ exp.(2 .* sll))),
                     zip(slikdd,slikd,slls))
-        hessian = mix((tlldd .+ tlld .^2) .* exp.(tll)) / exp(loglik) - grad^2
+        hessian = mix((tlldd .+ tlld .^2) .* exp.(tll .- loglik)) - grad^2
 
         return (loglik,grad,hessian)
     end
