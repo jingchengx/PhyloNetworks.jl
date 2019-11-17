@@ -40,8 +40,8 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
         bkwlik = Array{Float64}(undef, k, obj.net.numNodes)
         discrete_corelikelihood_trait!(obj, t, si, ri, fwdlik, dirlik)
         discrete_backwardlikelihood_tree!(obj, t, si, ri, fwdlik, dirlik, bkwlik)
-        f = fwdlik[ :, u.number]
-        gs = bkwlik[ :, v.number]
+        f = copy(fwdlik[ :, u.number])
+        gs = copy(bkwlik[ :, v.number])
         for e in v.edge
             if e != b && v == getParent(e) # e is sister edg of b
                 gs .+= dirlik[:, e.number]
@@ -87,6 +87,7 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
 
         # aggregate a [tree,rate] array with the prior prob
         function mix(ls::Array{Float64, 2})
+            ls = copy(ls)
             ls .*= exp.(obj.priorltw)
             ls ./= nrates
             sum(ls)
@@ -94,6 +95,7 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
 
         # same as mix, but on log scale
         function lmix(lls::Array{Float64, 2})
+            lls = copy(lls)
             lls .+= obj.priorltw
             lls .-= log(nrates)
             logsumexp(lls)
