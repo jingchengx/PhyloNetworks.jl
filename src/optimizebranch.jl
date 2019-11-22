@@ -151,13 +151,34 @@ function optimize_branch(obj::SSM, edgenum::Int)
     function wrapper(t::Vector, grad::Vector)
         (l,g,h) = fun(t[1])
         length(grad) > 0 && (grad[1] = g)
+        # println("g = ", g)
         return l
     end
     len = getEdge(edgenum, obj.net).length
-    opt = Opt(:LD_LBFGS, 1)
+    opt = Opt(:LD_SLSQP, 1)
     opt.max_objective = wrapper
     opt.lower_bounds = 0
     return optimize(opt, [len])
 end
 
+
+function optimize_branch_newton(obj::SSM, edgenum::Int)
+    fun = single_branch_loglik_objective(obj, edgenum)
+    f = x::Vector -> -fun(x[1])[1]
+    function g!(g,x::Vector)
+        g = [-fun(x[1])[2]]
+    end
+    function h!(h,x::Vector)
+        h = [-fun(x[1])[3]]
+    end
+
+    len = getEdge(edgenum, obj.net).length
+    x0 = [len]
+    df = TwiceDifferentiable(f, g!, h!, x0)
+
+    lx = [0.]; ux = [Inf];
+    dfc = TwiceDifferentiableConstraints(lx, ux)
+
+    res = Optim.optimize(df, dfc, x0, IPNewton())
+end
 
