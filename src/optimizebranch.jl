@@ -39,7 +39,7 @@ function collect_liks(obj::SSM, edgenum::Integer, t::Integer,
         dirlik = Array{Float64}(undef, k, obj.net.numEdges)
         bkwlik = Array{Float64}(undef, k, obj.net.numNodes)
         discrete_corelikelihood_trait!(obj, t, si, ri, fwdlik, dirlik)
-        discrete_backwardlikelihood_tree!(obj, t, si, ri, fwdlik, dirlik, bkwlik)
+        discrete_backwardlikelihood_trait!(obj, t, si, ri, bkwlik, dirlik)
         f = copy(fwdlik[ :, u.number])
         gs = copy(bkwlik[ :, v.number])
         for e in v.edge
@@ -81,7 +81,7 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
 
         # taking care of siteweight
         wsum = sum
-        if !ismissing(obj.siteweight)
+        if !isnothing(obj.siteweight)
             wsum = (vals -> sum(vals .* obj.siteweight))
         end
 
@@ -110,37 +110,41 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
                    map((f,gs)::Tuple ->
                        logsumexp(lp[ri] .+ (gs .+ f')),
                        stup), liks)
-        # tll: array of loglikelihood for a (tree,rate) pair
-        # tll[tree,rate]=loglik for tree and rate
-        tll = map(wsum, slls)
-        loglik = lmix(tll)
+        # since we need to integrate over tree and rate first, need to "transpose" slls, strls = [site][tree, rate] -> logliks
+        # TODO this copying operation could be wasteful
+        strls = [ [slls[tree,rate][site] for tree = 1:ntrees, rate = 1:nrates] for site = 1:obj.nsites]
+        # sll: array of loglikelihood for a (tree,rate) pair
+        # sll[site]=loglik for site (integrated over tree and rates)
+        sll = map(lmix, strls)
+        loglik = wsum(sll)
 
-        # TODO cache exp.(gs) and exp.(f)
-        # gradient
-        # slikd[tree,rate][site]=deriv of likelihood (NOT loglik)
-        # tlld[tree,rate]=deriv of tll[tree,rate] at t
-        slikd = map((ri,stup,lik)::Tuple ->
-                    ri == 0 ? zeros(length(lik)) :
-                    map((f,gs)::Tuple ->
-                        exp.(gs)' * pq[ri] * exp.(f),
-                        stup), liks)
-        tlld = map((sld, sll)::Tuple ->
-                    wsum(sld ./ exp.(sll)),
-                    zip(slikd,slls))
-        grad = mix(tlld .* exp.(tll .- loglik))
+        # # TODO cache exp.(gs) and exp.(f)
+        # # gradient
+        # # slikd[tree,rate][site]=deriv of likelihood (NOT loglik)
+        # # tlld[tree,rate]=deriv of tll[tree,rate] at t
+        # slikd = map((ri,stup,lik)::Tuple ->
+        #             ri == 0 ? zeros(length(lik)) :
+        #             map((f,gs)::Tuple ->
+        #                 exp.(gs)' * pq[ri] * exp.(f),
+        #                 stup), liks)
+        # tlld = map((sld, sll)::Tuple ->
+        #             wsum(sld ./ exp.(sll)),
+        #             zip(slikd,slls))
+        # grad = mix(tlld .* exp.(tll .- loglik))
 
-        # Hessian
-        slikdd = map((ri,stup,lik)::Tuple ->
-                     ri == 0 ? zeros(length(lik)) :
-                     map((f,gs)::Tuple ->
-                         exp.(gs)' * pqq[ri] * exp.(f),
-                         stup), liks)
-        tlldd = map((sldd,sld,sll)::Tuple ->
-                    wsum((sldd ./ exp.(sll)) - (sld .^ 2 ./ exp.(2 .* sll))),
-                    zip(slikdd,slikd,slls))
-        hessian = mix((tlldd .+ tlld .^2) .* exp.(tll .- loglik)) - grad^2
+        # # Hessian
+        # slikdd = map((ri,stup,lik)::Tuple ->
+        #              ri == 0 ? zeros(length(lik)) :
+        #              map((f,gs)::Tuple ->
+        #                  exp.(gs)' * pqq[ri] * exp.(f),
+        #                  stup), liks)
+        # tlldd = map((sldd,sld,sll)::Tuple ->
+        #             wsum((sldd ./ exp.(sll)) - (sld .^ 2 ./ exp.(2 .* sll))),
+        #             zip(slikdd,slikd,slls))
+        # hessian = mix((tlldd .+ tlld .^2) .* exp.(tll .- loglik)) - grad^2
 
-        return (loglik,grad,hessian)
+        # return (loglik,grad,hessian)
+        return (loglik,0,0)
     end
 
     return objective
@@ -162,23 +166,23 @@ function optimize_branch(obj::SSM, edgenum::Int)
 end
 
 
-function optimize_branch_newton(obj::SSM, edgenum::Int)
-    fun = single_branch_loglik_objective(obj, edgenum)
-    f = x::Vector -> -fun(x[1])[1]
-    function g!(g,x::Vector)
-        g = [-fun(x[1])[2]]
-    end
-    function h!(h,x::Vector)
-        h = [-fun(x[1])[3]]
-    end
+# function optimize_branch_newton(obj::SSM, edgenum::Int)
+#     fun = single_branch_loglik_objective(obj, edgenum)
+#     f = x::Vector -> -fun(x[1])[1]
+#     function g!(g,x::Vector)
+#         g = [-fun(x[1])[2]]
+#     end
+#     function h!(h,x::Vector)
+#         h = [-fun(x[1])[3]]
+#     end
 
-    len = getEdge(edgenum, obj.net).length
-    x0 = [len]
-    df = TwiceDifferentiable(f, g!, h!, x0)
+#     len = getEdge(edgenum, obj.net).length
+#     x0 = [len]
+#     df = TwiceDifferentiable(f, g!, h!, x0)
 
-    lx = [0.]; ux = [Inf];
-    dfc = TwiceDifferentiableConstraints(lx, ux)
+#     lx = [0.]; ux = [Inf];
+#     dfc = TwiceDifferentiableConstraints(lx, ux)
 
-    res = Optim.optimize(df, dfc, x0, IPNewton())
-end
+#     res = Optim.optimize(df, dfc, x0, IPNewton())
+# end
 
