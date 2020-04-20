@@ -110,29 +110,29 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
                    map((f,gs)::Tuple ->
                        logsumexp(lp[ri] .+ (gs .+ f')),
                        stup), liks)
-        # since we need to integrate over tree and rate first, need to "transpose" slls, strls = [site][tree, rate] -> logliks
+        # since we need to integrate over tree and rate first, need to "transpose" slls, strlls = [Site][Tree, Rate] -> LogLikS
         # TODO this copying operation could be wasteful
-        strls = [ [slls[tree,rate][site] for tree = 1:ntrees, rate = 1:nrates] for site = 1:obj.nsites]
-        # sll: array of loglikelihood for a (tree,rate) pair
-        # sll[site]=loglik for site (integrated over tree and rates)
-        sll = map(lmix, strls)
-        loglik = wsum(sll)
+        strlls = [ [slls[tree,rate][site] for tree = 1:ntrees, rate = 1:nrates] for site = 1:obj.nsites]
+        # slls[site]=loglik for site (integrated over tree and rates)
+        slls = map(lmix, strlls)
+        loglik = wsum(slls)
 
-        # # TODO cache exp.(gs) and exp.(f)
-        # # gradient
-        # # slikd[tree,rate][site]=deriv of likelihood (NOT loglik)
-        # # tlld[tree,rate]=deriv of tll[tree,rate] at t
-        # slikd = map((ri,stup,lik)::Tuple ->
-        #             ri == 0 ? zeros(length(lik)) :
-        #             map((f,gs)::Tuple ->
-        #                 exp.(gs)' * pq[ri] * exp.(f),
-        #                 stup), liks)
-        # tlld = map((sld, sll)::Tuple ->
-        #             wsum(sld ./ exp.(sll)),
-        #             zip(slikd,slls))
-        # grad = mix(tlld .* exp.(tll .- loglik))
+        # TODO cache exp.(gs) and exp.(f)
+        # gradient
+        # slikd[tree,rate][site]=deriv of likelihood (NOT loglik)
+        slikd = map((ri,stup,lik)::Tuple ->
+                    ri == 0 ? zeros(length(lik)) :
+                    map((f,gs)::Tuple ->
+                        exp.(gs)' * pq[ri] * exp.(f),
+                        stup), liks)
+        # similarly, now transpose slikd
+        # strdls = [site][tree, rate] derivative of *likelihoods* (not loglik)
+        strdls = [ [slikd[tree,rate][site] for tree = 1:ntrees, rate = 1:nrates] for site = 1:obj.nsites]
+        # sdlls = [site] derivative of logliks
+        sdlls = map(mix, strdls) ./ exp.(slls)
+        grad = wsum(sdlls)
 
-        # # Hessian
+        # # Hessian, the following implementation is wrong
         # slikdd = map((ri,stup,lik)::Tuple ->
         #              ri == 0 ? zeros(length(lik)) :
         #              map((f,gs)::Tuple ->
@@ -144,7 +144,8 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
         # hessian = mix((tlldd .+ tlld .^2) .* exp.(tll .- loglik)) - grad^2
 
         # return (loglik,grad,hessian)
-        return (loglik,0,0)
+
+        return (loglik,grad)
     end
 
     return objective
