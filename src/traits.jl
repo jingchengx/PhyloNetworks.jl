@@ -351,7 +351,7 @@ function vcv(net::HybridNetwork;
     C = V[:Tips]
     corr && StatsBase.cov2cor!(C, sqrt.(LinearAlgebra.diag(C)))
     Cd = convert(DataFrame, C)
-    names!(Cd, map(Symbol, V.tipNames))
+    rename!(Cd, map(Symbol, V.tipNames))
     return(Cd)
 end
 
@@ -591,7 +591,7 @@ function regressorShift(node::Vector{Node},
     function tmp_fun(x::Int)
         return(Symbol("shift_$(x)"))
     end
-    names!(df, [tmp_fun(num) for num in eNum])
+    rename!(df, [tmp_fun(num) for num in eNum])
     df[!,:tipNames]=T.tipNames
     return(df)
 end
@@ -1346,7 +1346,7 @@ function logLik_lam(lam::AbstractFloat,
     return res
 end
 
-# Code for optim taken from PhyloNetworks.jl/src/optimization.jl, lines 276 - 331
+# Code for optim taken from src/snaq_optimization.jl
 const fAbsTr = 1e-10
 const fRelTr = 1e-10
 const xAbsTr = 1e-10
@@ -1904,7 +1904,7 @@ function anova(objs::PhyloNetworkLinearModel...)
     end
     ## Transform into a DataFrame
     anovaTable = DataFrame(anovaTable)
-    names!(anovaTable, [:dof_res, :RSS, :dof, :SS, :F, Symbol("Pr(>F)")])
+    rename!(anovaTable, [:dof_res, :RSS, :dof, :SS, :F, Symbol("Pr(>F)")])
     return(anovaTable)
 end
 

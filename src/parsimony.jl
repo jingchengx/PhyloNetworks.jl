@@ -1,6 +1,6 @@
 
 """
-`parsimonyBottomUpFitch!(node, states, score)`
+    parsimonyBottomUpFitch!(node, states, score)
 
 Bottom-up phase (from tips to root) of the Fitch algorithm:
 assign sets of character states to internal nodes based on
@@ -40,7 +40,7 @@ function parsimonyBottomUpFitch!(node::Node, possibleStates::Dict{Int64,Set{T}},
 end
 
 """
-`parsimonyTopDownFitch!(node, states)`
+    parsimonyTopDownFitch!(node, states)
 
 Top-down phase (root to tips) of the Fitch algorithm:
 constrains character states at internal nodes based on
@@ -63,7 +63,7 @@ function parsimonyTopDownFitch!(node::Node, possibleStates::Dict{Int64,Set{T}}) 
 end
 
 """
-`parsimonySummaryFitch(tree, nodestates)`
+    parsimonySummaryFitch(tree, nodestates)
 
 summarize character states at nodes, assuming a *tree*
 """
@@ -149,7 +149,7 @@ function parsimonyDiscreteFitch(net::HybridNetwork, dat::DataFrame)
         error("""expecting taxon names in column 'taxon', or 'species' or column 1,
               and trait values in column 'trait' or column 2.""")
     end
-    tips = Dict{String,eltypes(dat)[j]}()
+    tips = Dict{String,eltype(dat[!,j])}()
     for r in 1:nrow(dat)
         if ismissing(dat[r,j]) continue; end
         tips[dat[r,i]] = dat[r,j]
@@ -158,7 +158,7 @@ function parsimonyDiscreteFitch(net::HybridNetwork, dat::DataFrame)
 end
 
 """
-`parsimonyBottomUpSoftwired!(node, blobroot, states, w, scores)`
+    parsimonyBottomUpSoftwired!(node, blobroot, states, w, scores)
 
 Computing the MP scores (one for each assignment of the root state)
 of a swicthing as described in Algorithm 1 in the following paper:
@@ -395,10 +395,11 @@ function readFastaToArray(filename::String)
 end
 
 """
-    readfastatodna(filename::String)
+    readfastatodna(filename::String, countPatterns=false::Bool)
 
 Read a fasta file to a dataframe containing a column for each site.
-Calculate weights and remove matching site patterns to reduce matrix dimension.
+If `countPatterns` is true, calculate weights and remove identical
+site patterns to reduce matrix dimension.
 
 Return a tuple containing:
 1. data frame of BioSequence DNA sequences, with taxon names in column 1
@@ -824,8 +825,8 @@ function initializeWeightsFromLeaves!(w::AbstractArray, net::HybridNetwork, tips
 end
 
 """
-    `parsimonyBottomUpGF!(node, blobroot, nchar, w, scores,
-        costmatrix1, costmatrix2)`
+    parsimonyBottomUpGF!(node, blobroot, nchar, w, scores,
+                         costmatrix1, costmatrix2)
 
 Compute the MP scores (one for each assignment of the blob root state)
 given the descendants of a blob, conditional on the states at predefined parents

@@ -533,7 +533,7 @@ end
 readTopology(s::IO) = readTopology(s,true)
 
 """
-    `checkNumHybEdges!(net)`
+    checkNumHybEdges!(net)
 
 Check for consistency between hybrid-related attributes in the network:
 - for each hybrid node: 2 or more hybrid edges
@@ -1440,16 +1440,16 @@ function hybridlambdaformat(net::HybridNetwork; prefix="I")
   net = deepcopy(net) # binding to new object
   nameinternalnodes!(net, prefix)
   str1 = writeTopology(net, round=true, digits=15) # internallabels=true by default
-  rx_noBL = r"#(H[\w\d]+)::\d*\.?\d*:(\d*\.?\d*)"
+  rx_noBL = r"#(H[\w\d]+)::\d*\.?\d*(?:e[+-]?\d+)?:(\d*\.?\d*(?:e[+-]?\d+)?)"
   subst_noBL = s"\1#\2"
-  rx_withBL = r"#(H[\w\d]+):(\d*\.?\d*):\d*\.?\d*:(\d*\.?\d*)"
+  rx_withBL = r"#(H[\w\d]+):(\d*\.?\d*(?:e[+-]?\d+)?):\d*\.?\d*(?:e[+-]?\d+)?:(\d*\.?\d*(?:e[+-]?\d+)?)"
   subst_withBL = s"\1#\3:\2"
   str2 = replace(replace(str1, rx_noBL => subst_noBL), rx_withBL => subst_withBL)
   ## next: replace the γ2 of the second occurrence by γ1 from the first occurrence:
   ## this is what Hybrid-Lambda wants...
   nh = length(net.hybrid)
-  m = eachmatch(r"H[^#]*#", str2)
-  hboth = collect(h.match for h in m)
+  m = eachmatch(r"[)(,](H[^#)(,]*#)", str2)
+  hboth = collect(h.captures[1] for h in m)
   hone = unique(hboth)
   length(hboth) == 2length(hone) || error("did not find Hname# twice for some one (or more) of the hybrid names.")
   str3 = str2

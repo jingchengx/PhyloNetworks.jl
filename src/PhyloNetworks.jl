@@ -144,10 +144,11 @@ module PhyloNetworks
         randomTrait!,
         fitdiscrete,
         readfastatodna,
-        datatoSSM,
         stationary,
         empiricalDNAfrequencies,
         nni!,
+        mapindividuals,
+        phyLiNC!,
         # neighbor joining
         nj,
         optimize_branch
@@ -156,13 +157,14 @@ module PhyloNetworks
     include("auxiliary.jl")
     include("update.jl")
     include("undo.jl")
+    include("addHybrid_snaq.jl")
     include("addHybrid.jl")
     include("deleteHybrid.jl")
-    include("moves.jl")
+    include("moves_snaq.jl")
     include("moves_semidirected.jl")
     include("readwrite.jl")
     include("readData.jl")
-    include("optimization.jl")
+    include("snaq_optimization.jl")
     include("pseudolik.jl")
     include("descriptive.jl")
     include("manipulateNet.jl")
@@ -179,5 +181,6 @@ module PhyloNetworks
     include("deprecated.jl")
     include("nj.jl")
     include("optimizebranch.jl")
+    include("phyLiNCoptimization.jl")
 
 end #module
