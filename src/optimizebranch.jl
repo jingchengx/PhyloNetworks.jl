@@ -59,8 +59,8 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
 
     # DEBUG: update logtrans and direct trees in this function, to be
     # removed in final version
-    directEdges!(obj.net)
-    update_logtrans(obj)
+    # directEdges!(obj.net)
+    # update_logtrans(obj)
 
     ntrees = length(obj.displayedtree)
     rates = obj.ratemodel.ratemultiplier
@@ -151,21 +151,37 @@ function single_branch_loglik_objective(obj::SSM, edgenum::Integer)
     return objective
 end
 
-function optimize_branch(obj::SSM, edgenum::Int)
-    fun = single_branch_loglik_objective(obj, edgenum)
+function optimizeSBL_LiNC!(obj::SSM, edge::Edge, ftolRel::Float64,
+                         ftolAbs::Float64, xtolRel::Float64, xtolAbs::Float64,
+                         maxeval=1000::Int)
+    len = edge.length
+    startlik = discrete_corelikelihood!(obj)
+    fun = single_branch_loglik_objective(obj, edge.number)
     function wrapper(t::Vector, grad::Vector)
-        (l,g,h) = fun(t[1])
+        (l,g) = fun(t[1])
         length(grad) > 0 && (grad[1] = g)
         # println("g = ", g)
         return l
     end
-    len = getEdge(edgenum, obj.net).length
-    opt = Opt(:LD_SLSQP, 1)
-    opt.max_objective = wrapper
-    opt.lower_bounds = 0
-    return optimize(opt, [len])
-end
+    @debug "start len : $len, start loglik : $startlik"
 
+    optBL = NLopt.Opt(:LD_SLSQP, 1)
+    NLopt.ftol_rel!(optBL,ftolRel) # relative criterion
+    NLopt.ftol_abs!(optBL,ftolAbs) # absolute criterion
+    NLopt.xtol_rel!(optBL,xtolRel)
+    NLopt.xtol_abs!(optBL,xtolAbs)
+    NLopt.maxeval!(optBL, maxeval) # max number of iterations
+    NLopt.max_objective!(optBL, wrapper)
+    optBL.lower_bounds = 0
+    fmax, xmax, ret = NLopt.optimize(optBL, [len]) # get lengths in order of edges vector
+    @debug "BL: got $(round(fmax, digits=5)) at BL = $(round.(xmax, digits=5)) after $(optBL.numevals) iterations (return code $(ret))"
+    if startlik < fmax
+        @debug "taking a step"
+        setLength!(edge, xmax[1])
+        obj.loglik = fmax
+    end
+    return edge
+end
 
 # function optimize_branch_newton(obj::SSM, edgenum::Int)
 #     fun = single_branch_loglik_objective(obj, edgenum)
@@ -186,4 +202,3 @@ end
 
 #     res = Optim.optimize(df, dfc, x0, IPNewton())
 # end
-
