@@ -47,11 +47,11 @@ and other fields, used very internally
 """
 mutable struct Edge
     number::Int
-    length::Float64 #default 1.0
+    length::Real #default 1.0
     hybrid::Bool
     y::Float64 # exp(-t), cannot set in constructor for congruence
     z::Float64 # 1-y , cannot set in constructor for congruence
-    gamma::Float64 # set to 1.0 for tree edges, hybrid?gamma:1.0
+    gamma::Real # set to 1.0 for tree edges, hybrid?gamma:1.0
     node::Array{ANode,1}
     isChild1::Bool # used for hybrid edges to set the direction (default true)
     isMajor::Bool  # major edge treated as tree edge for network traversal

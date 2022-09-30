@@ -70,7 +70,7 @@ function pairwiseTaxonDistanceMatrix(net::HybridNetwork;
         preorder!(net)
     end
     nnodes = net.numNodes
-    M = zeros(Float64,nnodes,nnodes)
+    M = zeros(Real,nnodes,nnodes)
     if length(nodeAges)>0
         length(nodeAges) == net.numNodes ||
           error("there should be $(net.numNodes) node ages")
@@ -109,7 +109,7 @@ function getTipSubmatrix(M::Matrix, net::HybridNetwork; indexation=:both)
     end
 end
 
-function pairwiseTaxonDistanceMatrix!(M::Matrix{Float64},net::HybridNetwork,nodeAges)
+function pairwiseTaxonDistanceMatrix!(M::Matrix{Real},net::HybridNetwork,nodeAges)
     recursionPreOrder!(net.nodes_changed, M, # updates M in place
             updateRootSharedPathMatrix!, # does nothing
             updateTreePairwiseTaxonDistanceMatrix!,
